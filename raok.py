@@ -11,6 +11,48 @@ import json
 from raoklog import raoklog,hexdump
 
 
+VERSION="0.3.2"
+
+
+# this function is pure workaround for unicode decoding issue in pyrad.
+# since there is no convenience method in pyrad to "just damn get the string of bytes" from STRING radius attribute,
+# we need to temporarily change dictionary type for it. It's totally ugly, but what we can do if we got OCTETS containing non-UTF8 data?
+def pyrad_str_value(pkt,attr):
+
+    ret = []
+    i = 0
+    
+    while True:
+       
+        try:
+            ret.append(pkt[attr][i])
+            
+        # as it with current implementation of pyrad goes, this index error won't be thrown, but it should (see "nested" catch comment in next lines).
+        # keep it here for the bright future.
+        except IndexError:
+            return ret
+        
+        except UnicodeDecodeError, e:
+
+            t = pkt.dict.attributes[attr].type
+            if t == 'string':
+                pkt.dict.attributes[attr].type = 'octets'
+                
+                ## this is ugly, but it reflects how pyrad throws exceptions. First unicode is thrown, then index
+                ## keeping aside that, it's safe to return, since we can't go beyond list boundaries.
+                try:
+                    ret.append(pkt[attr][i])
+                except IndexError:
+                    return ret
+                finally:
+                    pkt.dict.attributes[attr].type = 'string'    
+                
+        
+        i = i + 1
+        
+    return ret
+
+
 class RaokServer(server.Server):
 
     def load_config(self,config_file=None):
@@ -40,20 +82,27 @@ class RaokServer(server.Server):
 
     def pap_decrypt(self, pkt):
         if "User-Password" in pkt:
-            raoklog.debug("Received PAP encrypted password: \'%s\'" % pkt["User-Password"])
-            clean_pwd = pkt["User-Password"][0]
-            clean_pwd = pkt.PwDecrypt(clean_pwd)
-            raoklog.debug("Decrypted password: \'%s\'" % clean_pwd)
 
-            return (True, clean_pwd)
+            raoklog.debug("Received PAP encrypted password: \'%s\'" % pyrad_str_value(pkt,"User-Password")[0])
+            clean_pwd = pyrad_str_value(pkt,"User-Password")[0]
+            
+            try:
+                clean_pwd = pkt.PwDecrypt(clean_pwd)
+                raoklog.debug("Decrypted password: \'%s\'" % clean_pwd)
+                return (True, clean_pwd)
+            
+            except UnicodeDecodeError:
+                raoklog.info("   cannot convert decrypted password to UTF8")
+
         return (False, "")
 
     def auth_accept(self, orig_pkt):
-        raoklog.info("=> Creating response for user \'%s\'" % orig_pkt["User-Name"][0])
+        raoklog.info("   Response for user \'%s\'" % orig_pkt["User-Name"][0])
 
         reply=self.CreateReplyPacket(orig_pkt)
         ret_challenge = False
         ret_reject = False
+        ret_reason = "policy"
         
         
         try:
@@ -68,27 +117,70 @@ class RaokServer(server.Server):
             
             if u:
 
-                if 'Auth' in self.cfg['users'][u]:
-                    raoklog.info("Loading specific attributes for '%s' " % (u,))
-                    for a in self.cfg['users'][u]['Auth']:
-                        v = self.cfg['users'][u]['Auth'][a]
-                        raoklog.info("   %s = \'%s\' " % (a,v))
-                        
-                        reply[str(a)]=str(v)
-                    if 'Access' in self.cfg['users'][u]:
-                        if self.cfg['users'][u]['Access'] == False:
-                            ret_reject = True
-                        
                 if'Challenge' in self.cfg['users'][u]:
-                    raoklog.info("Using challenge: %s" % self.cfg['users'][u]['Challenge'])
+                    ret_challenge = True
+                    
+                    chal_setup_list = self.cfg['users'][u]['Challenge']
+                    raoklog.debug("   Loading challenge settings: %s" % chal_setup_list)
+                    
+                    
+                    # load challenge setup, so we know which state are we in
+                    # mapping is state => index
+                    i = 0
+                    chal_setup_list = chal_setup_list.split(":")
+                    chal_setup = {}
+                    
+                    for chsi in chal_setup_list:
+                        chal_setup[chsi] = i
+                        i = i + 1
+                        
 
                     if 'State' not in orig_pkt:
-                        raoklog.info("This is original access request, sending challenge")
-                        ret_challenge = self.cfg['users'][u]['Challenge'].split(':')                    
-                        reply['Reply-Message'] = str(ret_challenge[0])
-                        reply['State'] = str(ret_challenge[0])
+                        raoklog.debug("   'State' attribute not present")
+                        raoklog.info("   initial request, initiate challenge")
+                        
+                        reply['Reply-Message'] = str(chal_setup_list[0])
+                        reply['State'] = str(chal_setup_list[0])
                     else:
-                        raoklog.info("This challenge reply, sending accept")
+                        state = orig_pkt['State'][0]
+                        raoklog.debug("   current challenge state: " + state)
+
+                        # debug output for challenge index table
+                        raoklog.debug("   challenge table:")
+                        raoklog.debug("   " + str(chal_setup_list))
+                        for deb_chsi in chal_setup.keys():
+                            raoklog.debug("   [%s] %s" % (deb_chsi,chal_setup[chsi]))
+                        
+                        try:
+                            cur_idx = chal_setup[state]
+                            if cur_idx + 1 >= len(chal_setup_list):
+                                raoklog.debug("   challenge finished: " + state)
+                                ret_challenge = False
+                            else:
+                                
+                                reply['Reply-Message'] = str(chal_setup_list[cur_idx+1])
+                                reply['State'] = str(chal_setup_list[cur_idx+1])
+                            
+                            
+                        except KeyError:
+                            ret_challenge = False
+                            raoklog.info("   unknown challenge state received")
+                            ret_reject = True
+                            ret_reason = "challenge state error"
+
+                            
+                if 'Auth' in self.cfg['users'][u] and not ret_challenge and ret_reject:
+                    raoklog.info("   Loading attributes for '%s' " % (u,))
+                    for a in self.cfg['users'][u]['Auth']:
+                        v = self.cfg['users'][u]['Auth'][a]
+                        raoklog.info("      %s = \'%s\' " % (a,v))
+                        
+                        reply[str(a)]=str(v)
+                        
+                if 'Access' in self.cfg['users'][u]:
+                    if self.cfg['users'][u]['Access'] == False:
+                        ret_reject = True                            
+                            
             
         except KeyError as e:
             raoklog.error("Error adding specific attributes for '%s': %s " % (orig_pkt["User-Name"][0],str(e)))
@@ -96,15 +188,15 @@ class RaokServer(server.Server):
         
         
         reply.code=packet.AccessAccept
-        r_str= 'Accept'
+        r_str= "Accept (%s)" % (ret_reason,)
         if ret_reject:
             reply.code=packet.AccessReject
-            r_str = "Reject (explicit)"
+            r_str = "Reject (%s)" % (ret_reason,)
 
         if ret_challenge:
             reply.code = packet.AccessChallenge
-            r_str = 'Challenge'
-        
+            r_str = "Challenge (%s)" % (ret_reason,)
+         
         self.SendReplyPacket(orig_pkt.fd, reply)
 
         raoklog.info("=> Access-%s sent for user '%s' " % (r_str,orig_pkt["User-Name"][0],))
@@ -130,15 +222,21 @@ class RaokServer(server.Server):
         return True
 
     def HandleAuthPacket(self, pkt):
+        
         username = ""
 
         raoklog.info("=> Received an authentication request from %s" % pkt.source[0])
         raoklog.info("   Attributes:")
         for at in pkt.keys():
             if at == "User-Password":
-                raoklog.info("      %s = <removed>" % (str(at),))
+                dec_status,pwd = self.pap_decrypt(pkt)
+                if dec_status:
+                    raoklog.info("      %s = %s  (decrypted: '%s')" % (str(at),pyrad_str_value(pkt,at),pwd))
+                else:
+                    raoklog.info("      %s = %s  (decryption failed)" % (str(at),pyrad_str_value(pkt,at)))
             else:
-                raoklog.info("      %s = \'%s\'" % (str(at),(pkt[at][0])))
+                    raoklog.info("      %s = %s" % (str(at),pyrad_str_value(pkt,at)))
+                
 
         if not "User-Name" in pkt:
             raoklog.warning("RADIUS: client violates RFC: User-Name attribute missing in authentication packet.")
@@ -148,7 +246,7 @@ class RaokServer(server.Server):
             username = pkt["User-Name"][0]
 
         if username[0] == '-':
-            raoklog.warning("RADIUS: explicitly blocking user " + username[1:])
+            raoklog.info("=> blocking user " + username)
             self.auth_reject(pkt)
             return
 
@@ -168,12 +266,10 @@ class RaokServer(server.Server):
                 chal = pkt["CHAP-Challenge"][0]
                 resp = pkt["CHAP-Password"][0]
             except KeyError,e:
-                raoklog.warning("some attributes are missing")
+                raoklog.warning("   some chap attributes missing, rejecting")
                 attr_missing = True
                 self.auth_reject(pkt)
                 return
-
-            sec  = "test"
 
             (resp_chap_ident,foo) = struct.unpack_from("BB",resp)
             resp_octets=resp[1:]
@@ -200,9 +296,6 @@ class RaokServer(server.Server):
             
             # Successful decryption
             if retcode:
-                raoklog.debug("RADIUS: Attributes: ", 'HandleAuthPacket')
-                for attr in pkt.keys():
-                    raoklog.debug("RADIUS: %s: %s" % (attr, pkt[attr]))
                 
                 if self.authenticate_plain(username, clean_pwd, pkt):
                     self.auth_accept(pkt)
@@ -214,9 +307,9 @@ class RaokServer(server.Server):
             # Decryption failed!
             else:
                 raoklog.error("RADIUS: Password decryption failed (dumping packet): ")
-                raoklog.debug("RADIUS: Attributes: ")
+                raoklog.info("RADIUS: Attributes: ")
                 for attr in pkt.keys():
-                    raoklog.debug("RADIUS: %s: %s" % (attr, pkt[attr]))
+                    raoklog.info("RADIUS: %s: %s" % (attr, pyrad_str_value(pkt,attr)))
                 self.auth_reject(pkt)
 
         else:
@@ -231,7 +324,7 @@ class RaokServer(server.Server):
         raoklog.info("=> Received an accounting request from %s" % pkt.source[0])
         raoklog.info("   Attributes: ")
         for attr in pkt.keys():
-            raoklog.info("       %s = \'%s\'" % (attr, pkt[attr][0]))
+            raoklog.info("       %s = %s" % (attr, pyrad_str_value(pkt,attr)))
         
         try:
             reply=self.CreateReplyPacket(pkt)
@@ -243,8 +336,6 @@ class RaokServer(server.Server):
         raoklog.info("...")
         return True
 
-
-VERSION="0.3.2"
 
 def runRaok():
 
