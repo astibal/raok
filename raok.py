@@ -168,8 +168,8 @@ class RaokServer(server.Server):
                             ret_reject = True
                             ret_reason = "challenge state error"
 
-                            
-                if 'Auth' in self.cfg['users'][u] and not ret_challenge and ret_reject:
+
+                if 'Auth' in self.cfg['users'][u] and not ret_challenge and not ret_reject:
                     raoklog.info("   Loading attributes for '%s' " % (u,))
                     for a in self.cfg['users'][u]['Auth']:
                         v = self.cfg['users'][u]['Auth'][a]
@@ -262,8 +262,18 @@ class RaokServer(server.Server):
             attr_missing = False
 
             try: 
-                user = pkt["User-Name"][0]
                 chal = pkt["CHAP-Challenge"][0]
+            except KeyError,e:
+                raoklog.warning("   CHAP-Challenge is missing, using packet authenticator.")
+                if pkt.authenticator:
+                    chal = pkt.authenticator
+                else:
+                    attr_missing = True
+                    self.auth_reject(pkt)
+                    return
+
+            try: 
+                user = pkt["User-Name"][0]
                 resp = pkt["CHAP-Password"][0]
             except KeyError,e:
                 raoklog.warning("   some chap attributes missing, rejecting")

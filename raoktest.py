@@ -6,6 +6,24 @@ import socket
 import sys
 import pyrad.packet
 
+
+
+def load_config(self,config_file=None):
+    
+    fnm = config_file
+    if not fnm:
+        fnm = 'etc/raoktest.cfg'
+    
+    try:
+        f = open(fnm,'r')
+        self.cfg = json.load(f)
+
+    except IOError as e:
+        print "Failed to open config file: %s" % (str(e),)
+        sys.exit(-1)
+    
+    return True
+
 authport = 1812
 if len(sys.argv) > 1:
     authport = int(sys.argv[1])
