@@ -11,7 +11,7 @@ import json
 from raoklog import raoklog,hexdump
 
 
-VERSION="0.3.2"
+VERSION="0.3.3"
 
 
 # this function is pure workaround for unicode decoding issue in pyrad.
