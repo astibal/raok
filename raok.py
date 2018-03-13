@@ -354,7 +354,7 @@ def runRaok():
     raoklog.info("...")
     
     
-    srv=RaokServer(dict=dictionary.Dictionary("dictionary"))
+    srv=RaokServer(dict=dictionary.Dictionary("etc/dictionary"))
     
     srv.load_config()
     srv.init_hosts()
