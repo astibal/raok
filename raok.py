@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
 from pyrad import dictionary, packet, server, tools
@@ -6,12 +6,70 @@ from pyrad import dictionary, packet, server, tools
 import socket, hashlib, base64
 import re
 import sys
+import os.path
 import json
+import time,datetime
+import os,sys
+import logging
+import logging.config
 
-from raoklog import raoklog,hexdump
+
+VERSION="0.4.0"
+
+__vis_filter = """................................ !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[.]^_`abcdefghijklmnopqrstuvwxyz{|}~................................................................................................................................."""
+def hexdump(buf, length=16):
+    """Return a hexdump output string of the given buffer."""
+    n = 0
+    res = []
+    while buf:
+        line, buf = buf[:length], buf[length:]
+        hexa = ' '.join(['%02x' % ord(x) for x in line])
+        line = line.translate(__vis_filter)
+        res.append('  %04d:  %-*s %s' % (n, length * 3, hexa, line))
+        n += length
+    return '\n'.join(res)
 
 
-VERSION="0.3.3"
+
+
+
+
+class raoklog:
+    logger = None
+    separator = ": "
+
+    def __init__(self):
+        self.configure()
+
+
+    def configure(self):
+        try:
+            #logging.config.fileConfig('etc/nlog.conf')
+            self.logger = logging.getLogger("raok")
+            hdlr = logging.StreamHandler()
+            formatter = logging.Formatter('%(asctime)s [%(process)d] [%(levelname)s] %(message)s')
+            hdlr.setFormatter(formatter)
+            self.logger.addHandler(hdlr) 
+            self.logger.setLevel(logging.INFO)          
+            return True
+        except Exception,e:
+            print "LOGGER INIT FAILURE: " + str(e)
+            return False
+
+    def debug(self,msg,pfx=""):
+        self.logger.debug(pfx + self.separator + msg)
+    def info(self,msg,pfx=""):
+        self.logger.info(pfx + self.separator + msg)
+    def warning(self,msg,pfx=""):
+        self.logger.warn(pfx + self.separator + msg)
+    def error(self,msg,pfx=""):
+        self.logger.error(pfx + self.separator + msg)
+    def critical(self,msg,pfx=""):
+        self.logger.critical(pfx + self.separator + msg)
+    def hexdump(self,msg,pfx=""):
+        self.logger.debug(pfx + self.separator + "\n" + hexdump(msg))
+
+raoklog = raoklog()
 
 
 # this function is pure workaround for unicode decoding issue in pyrad.
@@ -55,11 +113,9 @@ def pyrad_str_value(pkt,attr):
 
 class RaokServer(server.Server):
 
-    def load_config(self,config_file=None):
+    def load_config(self,config_file):
         
         fnm = config_file
-        if not fnm:
-            fnm = 'etc/raok.cfg'
       
         try:
             f = open(fnm,'r')
@@ -196,7 +252,10 @@ class RaokServer(server.Server):
         if ret_challenge:
             reply.code = packet.AccessChallenge
             r_str = "Challenge (%s)" % (ret_reason,)
-         
+        
+        
+###
+        self.delay_packet(u,r_str)
         self.SendReplyPacket(orig_pkt.fd, reply)
 
         raoklog.info("=> Access-%s sent for user '%s' " % (r_str,orig_pkt["User-Name"][0],))
@@ -204,11 +263,29 @@ class RaokServer(server.Server):
 
         return reply
 
+    def delay_packet(self,u,typ):
+        # process delay
+        delay = 0
+        try:
+            delay = self.cfg['users']['default']['Settings']['Delay']
+        except KeyError:
+            pass
+
+        try:
+            delay = self.cfg['users'][u]['Settings']['Delay']
+        except KeyError:
+            pass
+        
+        if delay > 0:
+            raoklog.info("=> Access-%s for user '%s' delayed by %ds" % (typ,u,delay))
+            time.sleep(delay)        
+
     def auth_reject(self, orig_pkt):
         raoklog.info("=> Authentication failed for user \'%s\'" % orig_pkt["User-Name"][0])
 
         reply=self.CreateReplyPacket(orig_pkt)
         reply.code=packet.AccessReject
+        self.delay_packet(orig_pkt["User-Name"][0],"Reject")
         self.SendReplyPacket(orig_pkt.fd, reply)
 
         raoklog.info("...")
@@ -338,6 +415,7 @@ class RaokServer(server.Server):
         
         try:
             reply=self.CreateReplyPacket(pkt)
+            self.delay_packet(pkt["User-Name"][0],"acct")
             self.SendReplyPacket(pkt.fd, reply)
 
         except Exception as e:
@@ -353,10 +431,32 @@ def runRaok():
     raoklog.info("RAOK %s: !! DON'T USE IN PRODUCTION !!" % (VERSION,))    
     raoklog.info("...")
     
+
+    # load dictionary
+    sysdick = "/etc/raok/dictionary"
+    dick = None
+
+    if os.path.isfile(sysdick):
+        raoklog.info("loading dictionary from %s" % (sysdick,))
+        dick = dictionary.Dictionary(sysdick)
+    else:
+        curdic = "etc/dictionary"
+        raoklog.info("loading dictionary from %s" % (curdic,))
+        dick = dictionary.Dictionary(curdic)
+
+        
+    srv=RaokServer(dict=dick)
     
-    srv=RaokServer(dict=dictionary.Dictionary("etc/dictionary"))
+    # load config, fallback from /etc/raok to curr dir
+    syscfg = "/etc/raok/raok.cfg"
+    if os.path.isfile(syscfg):
+        raoklog.info("loading config from %s" % (syscfg,))
+        srv.load_config(syscfg)
+    else:
+        curcfg = "etc/raok.cfg"
+        raoklog.info("loading config from %s" % (curcfg,))
+        srv.load_config(curcfg)
     
-    srv.load_config()
     srv.init_hosts()
 
     if len(sys.argv) > 1:
