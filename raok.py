@@ -468,4 +468,9 @@ def runRaok():
 
     srv.Run()
 
-runRaok()
+
+if __name__ == "__main__":
+    try:
+        runRaok()
+    except KeyboardInterrupt:
+        raoklog.info("Ctrl-C hit. Terminating.")
