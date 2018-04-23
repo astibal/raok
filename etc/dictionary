@@ -419,3 +419,6 @@ ATTRIBUTE Fortinet-Access-Profile   6   string
 #
 # END-VENDOR Fortinet
 
+VENDOR smithproxy 11111
+BEGIN-VENDOR smithproxy
+ATTRIBUTE Smithproxy-Policy   1   string

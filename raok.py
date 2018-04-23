@@ -231,7 +231,16 @@ class RaokServer(server.Server):
                         v = self.cfg['users'][u]['Auth'][a]
                         raoklog.info("      %s = \'%s\' " % (a,v))
                         
-                        reply[str(a)]=str(v)
+                        
+                        if isinstance(v,list):
+                            try:
+                                reply[str(a)] = v
+                            except TypeError:
+                                raoklog.error("     ! this version of pyrad doesn't support repeated attributes")
+                                reply[str(a)] = str(v[-1])
+
+                        else:
+                            reply[str(a)]=str(v)
                         
                 if 'Access' in self.cfg['users'][u]:
                     if self.cfg['users'][u]['Access'] == False:
