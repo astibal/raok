@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
+from __future__ import print_function
 
 from pyrad import dictionary, packet, server, tools
 
@@ -49,11 +50,12 @@ class raoklog:
             hdlr = logging.StreamHandler()
             formatter = logging.Formatter('%(asctime)s [%(process)d] [%(levelname)s] %(message)s')
             hdlr.setFormatter(formatter)
-            self.logger.addHandler(hdlr) 
+            self.logger.handlers = []
+            self.logger.addHandler(hdlr)
             self.logger.setLevel(logging.INFO)          
             return True
         except Exception,e:
-            print "LOGGER INIT FAILURE: " + str(e)
+            print("LOGGER INIT FAILURE: " + str(e))
             return False
 
     def debug(self,msg,pfx=""):
@@ -122,7 +124,7 @@ class RaokServer(server.Server):
             self.cfg = json.load(f)
 
         except IOError as e:
-            print "Failed to open config file: %s" % (str(e),)
+            raoklog.error("Failed to open config file: %s" % (str(e),))
             sys.exit(-1)
         
         return True

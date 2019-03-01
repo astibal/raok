@@ -19,8 +19,8 @@ def load_config(self,config_file=None):
         self.cfg = json.load(f)
 
     except IOError as e:
-        print "Failed to open config file: %s" % (str(e),)
-        sys.exit(-1)
+        print ("Failed to open config file: %s" % (str(e),)
+        sys.exit(1)
     
     return True
 
