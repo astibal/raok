@@ -15,7 +15,7 @@ import logging
 import logging.config
 
 
-VERSION="0.4.0"
+VERSION="0.4.5"
 
 __vis_filter = """................................ !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[.]^_`abcdefghijklmnopqrstuvwxyz{|}~................................................................................................................................."""
 def hexdump(buf, length=16):

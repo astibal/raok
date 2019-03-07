@@ -31,15 +31,6 @@ endfunction(install_if_not_exists)
 if(UNIX)
     SET(CMAKE_INSTALL_PREFIX /usr)
     
-    
-#    install(FILES raok.py DESTINATION bin 
-#            PERMISSIONS 
-#                    OWNER_READ OWNER_WRITE OWNER_EXECUTE 
-#                    GROUP_READ GROUP_EXECUTE 
-#                    WORLD_READ WORLD_EXECUTE 
-#            RENAME raok
-#    )
-
     install(FILES raok.py DESTINATION bin 
             PERMISSIONS 
                     OWNER_READ OWNER_WRITE OWNER_EXECUTE 
@@ -47,7 +38,13 @@ if(UNIX)
                     WORLD_READ WORLD_EXECUTE 
             RENAME raok
     )
-
+    install(FILES rasta.py DESTINATION bin 
+            PERMISSIONS 
+                    OWNER_READ OWNER_WRITE OWNER_EXECUTE 
+                    GROUP_READ GROUP_EXECUTE 
+                    WORLD_READ WORLD_EXECUTE 
+            RENAME rasta
+    )
 
     install_if_not_exists(etc/raok.cfg /etc/raok)
     install_if_not_exists(etc/dictionary /etc/raok)
@@ -55,7 +52,7 @@ if(UNIX)
     SET(CPACK_GENERATOR "DEB")
     SET(MAJOR_VERSION 0)
     SET(MINOR_VERSION 4)
-    SET(PATCH_VERSION 0)
+    SET(PATCH_VERSION 5)
     SET(CPACK_PACKAGE_VERSION_MAJOR "${MAJOR_VERSION}")
     SET(CPACK_PACKAGE_VERSION_MINOR "${MINOR_VERSION}")
     SET(CPACK_PACKAGE_VERSION_PATCH "${PATCH_VERSION}")
