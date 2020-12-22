@@ -4,6 +4,8 @@ is very simple RADIUS  **testing** server which accepts any authentication or ac
 prints it out. Unless you specify otherwise.
 It supports challenges, and PAP/CHAP and various other small things good for testing.
 
+NOTE: before start, run **raok-init.sh** to create default config files.
+
 You can configure it in:
 
 .. code-block::
@@ -14,7 +16,7 @@ or from current directory, if the above is not found.
 
 .. code-block::
 
-   ./etc/raok/raok.cfg
+   ./etc/raok.cfg
 
 Rasta
 ~~~~~

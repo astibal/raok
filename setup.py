@@ -8,8 +8,8 @@ with open(path.join(this_directory, 'README.rst')) as fh:
 
 setuptools.setup(
     name='raok',
-    version='0.5.0post1',
-    scripts=['raok.py', 'rasta.py'],
+    version='0.5.0post2',
+    scripts=[ 'raok-init.sh', 'raok.py', 'rasta.py'],
     author="Ales Stibal",
     author_email="astib@mag0.net",
     description="verbose TESTING radius authentication and accounting service and client",
