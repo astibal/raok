@@ -512,17 +512,17 @@ VALUE		Packet-Type	Status-Client			13
 
 
 ##
-# Fortinet’s VSA’s
+# Fortinet VSA
 #
 VENDOR fortinet 12356
 
 BEGIN-VENDOR fortinet
-ATTRIBUTE Fortinet-Group-Name   1   string
-ATTRIBUTE Fortinet-Client-IP-Address   2   ipaddr
-ATTRIBUTE Fortinet-Vdom-Name   3   string
-ATTRIBUTE Fortinet-Client-IPv6-Address   4   octets
-ATTRIBUTE Fortinet-Interface-Name   5   string
-ATTRIBUTE Fortinet-Access-Profile   6   string
+ATTRIBUTE   Fortinet-Group-Name          1   string
+ATTRIBUTE   Fortinet-Client-IP-Address   2   ipaddr
+ATTRIBUTE   Fortinet-Vdom-Name           3   string
+ATTRIBUTE   Fortinet-Client-IPv6-Address 4   octets
+ATTRIBUTE   Fortinet-Interface-Name      5   string
+ATTRIBUTE   Fortinet-Access-Profile      6   string
 #
 # Integer Translations
 #
