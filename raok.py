@@ -10,6 +10,7 @@ import sys
 import time
 import binascii
 import hashlib
+import struct
 
 from pyrad import dictionary, packet, server
 
@@ -26,7 +27,7 @@ def hexdump(buf, length=16):
         line, buf = bytes(buf[:length]), bytes(buf[length:])
         hexa = ' '.join(['%02x' % x for x in line])
         line = line.translate(__vis_filter)
-        res.append('  %04d:  %-*s %s' % (n, length * 3, hexa, line))
+        res.append('  %04d:  %-*s %s' % (n, length * 3, hexa, line.decode(encoding='latin1')))
         n += length
     return '\n'.join(res)
 
@@ -354,12 +355,105 @@ class RaokServer(server.Server):
 
         return True
 
-    def HandleAuthPacket(self, pkt):
+    def process_pap(self, pkt):
+        try:
+            username = pkt["User-Name"][0]
 
-        username = ""
+            retcode, clean_pwd = self.pap_decrypt(pkt)
 
-        raoklog.info("=> Received an authentication request from %s" % pkt.source[0])
-        raoklog.info("   Attributes:")
+            # Successful decryption
+            if retcode:
+
+                if self.authenticate_plain(username, clean_pwd, pkt):
+                    self.auth_accept(pkt)
+                else:
+                    self.auth_reject(pkt)
+
+            # Decryption failed!
+            else:
+                raoklog.error("RADIUS: Password decryption failed (dumping packet): ")
+                raoklog.info("RADIUS: Attributes: ")
+                for attr in pkt.keys():
+                    raoklog.info("RADIUS: %s: %s" % (attr, pyrad_str_value(pkt, attr)))
+                self.auth_reject(pkt)
+
+        except KeyError as e:
+            raoklog.warning("   some chap attributes missing, rejecting")
+            self.auth_reject(pkt)
+
+        except UnicodeDecodeError as e:
+            raoklog.error("RADIUS: Password decoding failed")
+            raoklog.error("RADIUS: open mode: allowed in")
+            self.auth_reject(pkt)
+
+        return True
+
+    def process_chap(self, pkt):
+
+        try:
+            chap_challenge = pkt["CHAP-Challenge"][0]
+        except KeyError as e:
+            raoklog.warning("   CHAP-Challenge is missing, using packet authenticator.")
+            if pkt.authenticator:
+                chap_challenge = pkt.authenticator
+            else:
+                attr_missing = True
+                self.auth_reject(pkt)
+                return True
+
+        try:
+            user = pkt["User-Name"][0]
+            resp = pkt["CHAP-Password"][0]
+        except KeyError as e:
+            raoklog.warning("   some chap attributes missing, rejecting")
+            attr_missing = True
+            self.auth_reject(pkt)
+            return True
+
+        (resp_chap_ident, foo) = struct.unpack_from("BB", resp)
+
+        resp_octets = resp[1:]
+        raoklog.debug("RADIUS: Chap-Ident=%d, Challenge-Octets=%s, Response-Octets=%s" %
+                      (resp_chap_ident, hexdump(bytes(chap_challenge)), hexdump(bytes(resp_octets))),
+                      'HandleAuthPacket')
+
+        if self.authenticate_chap(user, resp_chap_ident, chap_challenge, resp_octets, pkt):
+            self.auth_accept(pkt)
+            return True
+        else:
+            self.auth_reject(pkt)
+            return True
+
+    def do_reject_filter(self, pkt):
+
+        # User-Name must be in radius packet
+        if not "User-Name" in pkt:
+            raoklog.warning("RADIUS: client violates RFC: User-Name attribute missing in authentication packet.")
+            self.auth_reject(pkt)
+            return True
+
+        try:
+            username = pkt["User-Name"][0]
+
+            if username[0] == '-':
+                raoklog.info("=> blocking user " + username)
+                self.auth_reject(pkt)
+                return True
+
+            if "User-Password" in pkt and "CHAP-Password" in pkt:
+                raoklog.warning("RADIUS: client violates RFC: both CHAP and PAP authentication request in packet.")
+                self.auth_reject(pkt)
+                return True
+
+        except KeyError as e:
+
+            raoklog.warning("RADIUS: client violates RFC: both CHAP and PAP authentication request in packet.")
+            self.auth_reject(pkt)
+
+        return False
+
+    @staticmethod
+    def do_packet_dump(pkt):
         for at in pkt.keys():
             if at == "User-Password":
                 dec_status, pwd = RaokServer.pap_decrypt(pkt)
@@ -370,92 +464,98 @@ class RaokServer(server.Server):
             else:
                 raoklog.info("      %s = %s" % (str(at), pyrad_str_value(pkt, at)))
 
-        if not "User-Name" in pkt:
-            raoklog.warning("RADIUS: client violates RFC: User-Name attribute missing in authentication packet.")
-            self.auth_reject(pkt)
-            return
-        else:
-            username = pkt["User-Name"][0]
+    # def chap_generate(id_hex, password, challenge):
+    #
+    #     result = bytes([id_hex]) + bytes(password, encoding="ascii") + challenge
+    #     response = hashlib.md5(result).digest()
 
-        if username[0] == '-':
-            raoklog.info("=> blocking user " + username)
+
+    @staticmethod
+    def lmhash_generate(id_hex, password, challenge):
+        hash = hashlib.new('md4', "password".encode('utf-16le')).digest()
+        binascii.hexlify(hash)
+
+    def process_mschap(self, pkt):
+
+        try:
+            chap_challenge = pkt["MS-CHAP-Challenge"][0]
+        except KeyError as e:
+            raoklog.warning("   MS-CHAP-Challenge is missing, using packet authenticator.")
+            if pkt.authenticator:
+                chap_challenge = pkt.authenticator
+            else:
+                self.auth_reject(pkt)
+                return True
+        try:
+            user = pkt["User-Name"][0]
+            resp = pkt["MS-CHAP-Response"][0]
+        except KeyError as e:
+            raoklog.warning("   some chap attributes missing, rejecting")
             self.auth_reject(pkt)
+            return True
+
+        (resp_chap_ident, ) = struct.unpack_from("B", resp[49:])
+
+        resp_octets = resp[1:]
+
+        lm_resp = resp_octets[0:24]
+        nt_resp = resp_octets[25:]
+
+        raoklog.debug("RADIUS: Chap-Ident=%d,\n    LM_challenge=\n%s\n    NT_challenge=\n%s" %
+                     (resp_chap_ident,
+                      hexdump(bytes(lm_resp)),
+                      hexdump(bytes(nt_resp))))
+
+        userpass = self.find_user_password(user)
+        if userpass:
+            from py3mschap import mschap
+
+            nt_correct_resp = mschap.generate_nt_response_mschap(chap_challenge, userpass)
+            lm_correct_resp = mschap.generate_lm_response_mschap(chap_challenge, userpass)
+
+            raoklog.debug("RADIUS: received NT response: \n" + hexdump(bytes(nt_resp)))
+            raoklog.debug("RADIUS: correct NT response: \n" + hexdump(bytes(nt_correct_resp)))
+            raoklog.debug("RADIUS: received LM response: \n" + hexdump(bytes(lm_resp)))
+            raoklog.debug("RADIUS: correct LM response: \n" + hexdump(bytes(lm_correct_resp)))
+
+            if nt_correct_resp == nt_resp:
+                raoklog.info(">>>  user '" + user + "' MS-CHAP NT password check OK")
+                return True
+            else:
+                raoklog.info(">>>  user '" + user + "' MS-CHAP NT password check failed")
+                return False
+
+        raoklog.info(">>>  user '" + user + "' MS-CHAP password check skipped")
+        return True
+
+    def HandleAuthPacket(self, pkt):
+
+        raoklog.info("=> Received an authentication request from %s" % pkt.source[0])
+        raoklog.info("   Attributes:")
+
+        RaokServer.do_packet_dump(pkt)
+
+        # check and return if something's wrong
+        if self.do_reject_filter(pkt):
             return
 
-        if "User-Password" in pkt and "CHAP-Password" in pkt:
-            raoklog.warning("RADIUS: client violates RFC: both CHAP and PAP authentication request in packet.")
-            self.auth_reject(pkt)
-            return
+        if "Password" in pkt:
+            if self.process_pap(pkt):
+                return
 
         elif "CHAP-Password" in pkt:
-            ### Testing block
-            import struct
-
-            attr_missing = False
-
-            try:
-                chal = pkt["CHAP-Challenge"][0]
-            except KeyError as e:
-                raoklog.warning("   CHAP-Challenge is missing, using packet authenticator.")
-                if pkt.authenticator:
-                    chal = pkt.authenticator
-                else:
-                    attr_missing = True
-                    self.auth_reject(pkt)
-                    return
-
-            try:
-                user = pkt["User-Name"][0]
-                resp = pkt["CHAP-Password"][0]
-            except KeyError as e:
-                raoklog.warning("   some chap attributes missing, rejecting")
-                attr_missing = True
-                self.auth_reject(pkt)
+            if self.process_chap(pkt):
                 return
 
-            (resp_chap_ident, foo) = struct.unpack_from("BB", resp)
-
-            resp_octets = resp[1:]
-            raoklog.debug("RADIUS: Chap-Ident=%d, Challenge-Octets=%s, Response-Octets=%s" %
-                          (resp_chap_ident, hexdump(bytes(chal)), hexdump(bytes(resp_octets))), 'HandleAuthPacket')
-
-            if self.authenticate_chap(user, resp_chap_ident, chal, resp_octets, pkt):
+        elif "MS-CHAP-Response" in pkt and "MS-CHAP-Challenge" in pkt:
+            if self.process_mschap(pkt):
                 self.auth_accept(pkt)
-                return
+                return True
             else:
                 self.auth_reject(pkt)
-                return
-
-        elif "User-Password" in pkt:
-            retcode = None
-            clean_pwd = None
-            try:
-                (retcode, clean_pwd) = self.pap_decrypt(pkt)
-            except UnicodeDecodeError as e:
-                raoklog.error("RADIUS: Password decryption failed")
-                raoklog.error("RADIUS: open mode: allowed in")
-                retcode = True
-                clean_pws = "<failed-to-decrypt>"
-
-            # Successful decryption
-            if retcode:
-
-                if self.authenticate_plain(username, clean_pwd, pkt):
-                    self.auth_accept(pkt)
-                    return
-                else:
-                    self.auth_reject(pkt)
-                    return
-
-            # Decryption failed!
-            else:
-                raoklog.error("RADIUS: Password decryption failed (dumping packet): ")
-                raoklog.info("RADIUS: Attributes: ")
-                for attr in pkt.keys():
-                    raoklog.info("RADIUS: %s: %s" % (attr, pyrad_str_value(pkt, attr)))
-                self.auth_reject(pkt)
-
+                return True
         else:
+            raoklog.error("unknown authentication method")
             self.auth_reject(pkt)
 
     def _HandleAcctPacket(self, pkt):

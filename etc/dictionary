@@ -408,7 +408,7 @@ VALUE		Packet-Type	Status-Client			13
 
 VENDOR Fortinet 12356
 
-BEGIN-VENDOR fortinet
+BEGIN-VENDOR Fortinet
 ATTRIBUTE   Fortinet-Group-Name            1   string
 ATTRIBUTE   Fortinet-Client-IP-Address     2   ipaddr
 ATTRIBUTE   Fortinet-Vdom-Name             3   string
