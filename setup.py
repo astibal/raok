@@ -8,11 +8,11 @@ with open(path.join(this_directory, 'README.rst')) as fh:
 
 setuptools.setup(
     name='raok',
-    version='0.5.0post3',
+    version='0.5.3post1',
     scripts=[ 'raok-init.sh', 'raok.py', 'rasta.py'],
     author="Ales Stibal",
     author_email="astib@mag0.net",
-    description="verbose TESTING radius authentication and accounting service and client",
+    description="verbose TESTING radius authentication and accounting server and client",
     long_description=long_description,
     long_description_content_type="text/x-rst",
     url="https://github.com/astibal/raok",
@@ -24,5 +24,5 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     include_package_data=True,
-    install_requires=[ "pyrad", ]
+    install_requires=[ "pyrad", "py3mschap"]
 )

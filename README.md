@@ -1,7 +1,7 @@
 ## Raok
 is very simple RADIUS  **testing** server which accepts any authentication or accounting and
 prints it out. Unless you specify otherwise.
-It supports challenges, and PAP/CHAP and various other small things good for testing.
+It supports challenges, and PAP/CHAP/MS-CHAP/MS-CHAP2 and various other small things good for testing.
 
 NOTE: before start, run **raok-init.sh** to create default config files.
 

@@ -14,7 +14,7 @@ import struct
 
 from pyrad import dictionary, packet, server
 
-VERSION = "0.5.0"
+VERSION = "0.5.3"
 
 __vis_filter = b"""................................ !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[.]^_`abcdefghijklmnopqrstuvwxyz{|}~................................................................................................................................."""
 
@@ -356,12 +356,15 @@ class RaokServer(server.Server):
 
         correct_password = self.find_user_password(user)
         if not correct_password:
+            raoklog.info(">>>  user " + user + " PAP password check skipped")
             return True
 
         if correct_password == password:
             raoklog.info(">>>  user '" + user + "' PAP password check OK")
         else:
             raoklog.info(">>>  user '" + user + "' PAP password check failed")
+            if correct_password:
+                return False
 
         return True
 
@@ -369,7 +372,8 @@ class RaokServer(server.Server):
 
         correct_password = self.find_user_password(user)
         if not correct_password:
-            return
+            raoklog.info(">>>  user " + user + " CHAP password check skipped")
+            return True
 
         correct_response = RaokServer.chap_generate(chap_ident, correct_password, challenge)
 
@@ -380,6 +384,9 @@ class RaokServer(server.Server):
             raoklog.info(">>>  user '" + user + "' CHAP password check OK")
         else:
             raoklog.info(">>>  user '" + user + "' CHAP password check failed")
+            if correct_password:
+                return False
+
 
         return True
 
@@ -503,6 +510,92 @@ class RaokServer(server.Server):
         hash = hashlib.new('md4', "password".encode('utf-16le')).digest()
         binascii.hexlify(hash)
 
+
+    def process_mschap2(self, pkt) -> dict:
+
+        # set challenge : either it's attribute or authenticator
+        try:
+            triage = "MS-CHAP-Challenge"
+            chap_challenge = pkt[triage][0]
+        except KeyError as e:
+            raoklog.warning("   MS-CHAP-Challenge is missing, using packet authenticator.")
+            if pkt.authenticator:
+                chap_challenge = pkt.authenticator
+            else:
+                self.auth_reject(pkt)
+                return {}
+
+        try:
+            user = pkt["User-Name"][0]
+            resp = pkt["MS-CHAP2-Response"][0]
+        except KeyError as e:
+            raoklog.warning("   some chap attributes missing, rejecting")
+            self.auth_reject(pkt)
+            return {}
+
+        (resp_chap_ident, ) = struct.unpack_from("B", resp[49:])
+
+        nt_response = resp[26:50]
+        peer_challenge = resp[2:18]
+
+        userpass = self.find_user_password(user)
+        if userpass:
+            from py3mschap import mschap
+            nt_correct_resp = mschap.generate_nt_response_mschap2(
+                chap_challenge,
+                peer_challenge,
+                user,
+                userpass,
+            )
+
+            if nt_correct_resp == nt_response:
+                raoklog.info(">>>  user '" + user + "' MS-CHAPv2 NT password check OK")
+                auth_resp = mschap.generate_authenticator_response(
+                    userpass,
+                    nt_response,
+                    peer_challenge,
+                    chap_challenge,
+                    user
+                )
+
+                test_gen_incorrect_response = False
+                test_gen_mppe_response = False
+
+                if test_gen_incorrect_response:
+                    # Let's check if NAS verifies the response
+                    auth_resp = "\x00"*25 + auth_resp[25:]
+
+                ret = {
+                    'MS-CHAP2-Success': auth_resp,
+                }
+
+                if test_gen_mppe_response:
+                    # MPPE stuff
+                    from py3mschap import mppe
+
+                    mppeSendKey, mppeRecvKey = mppe.mppe_chap2_gen_keys(userpass, nt_response)
+                    send_key, recv_key = mppe.gen_radius_encrypt_keys(
+                        mppeSendKey,
+                        mppeRecvKey,
+                        b"radpass",
+                        chap_challenge)
+
+                    # We can send MPPE creds if desired
+                    ret['MS-MPPE-Encryption-Policy'] = b'\x00\x00\x00\x01'
+                    ret['MS-MPPE-Encryption-Type'] = b'\x00\x00\x00\x06'
+                    ret['MS-MPPE-Send-Key'] = send_key
+                    ret['MS-MPPE-Recv-Key'] = recv_key
+
+                return ret
+        else:
+            raoklog.info(">>>  user " + user + " MS-CHAP2 password check skipped")
+
+            # return True :)
+            ret = {
+                'Reply-Message': "default authentication",
+            }
+            return ret
+
     def process_mschap(self, pkt):
 
         try:
@@ -567,7 +660,7 @@ class RaokServer(server.Server):
         if self.do_reject_filter(pkt):
             return
 
-        if "Password" in pkt:
+        if "User-Password" in pkt:
             if self.process_pap(pkt):
                 return
 
@@ -591,6 +684,16 @@ class RaokServer(server.Server):
             else:
                 self.auth_reject(pkt)
                 return True
+
+        elif "MS-CHAP2-Response" in pkt and "MS-CHAP-Challenge" in pkt:
+             ret = self.process_mschap2(pkt)
+             if ret:
+                 self.auth_accept(pkt, additionals_dict=ret)
+                 return True
+             else:
+                 self.auth_reject(pkt, additionals_dict=ret)
+                 return True
+
         else:
             raoklog.error("unknown authentication method")
             self.auth_reject(pkt)
