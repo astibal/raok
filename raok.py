@@ -169,7 +169,7 @@ class RaokServer(server.Server):
 
         return False, ""
 
-    def auth_accept(self, orig_pkt):
+    def auth_accept(self, orig_pkt, additionals_dict: dict = None):
         raoklog.info("   Response for user \'%s\'" % orig_pkt["User-Name"][0])
 
         reply = self.CreateReplyPacket(orig_pkt)
@@ -271,6 +271,8 @@ class RaokServer(server.Server):
 
         ###
         self.delay_packet(u, r_str)
+
+        reply = RaokServer.packet_apply_additionals(reply, additionals_dict)
         self.SendReplyPacket(orig_pkt.fd, reply)
 
         raoklog.info("=> Access-%s sent for user '%s' " % (r_str, orig_pkt["User-Name"][0],))
@@ -295,10 +297,33 @@ class RaokServer(server.Server):
             raoklog.info("=> Access-%s for user '%s' delayed by %ds" % (typ, u, delay))
             time.sleep(delay)
 
-    def auth_reject(self, orig_pkt):
+    @staticmethod
+    def packet_apply_additionals(reply, additionals_dict: dict = None):
+        if additionals_dict:
+            raoklog.debug("adding additional codes to reject packet")
+            for add in additionals_dict.keys():
+                raoklog.debug(str(add) + ": " + str(additionals_dict[add]))
+                reply[add] = additionals_dict[add]
+        return reply
+
+    def send_reply(self, orig_pkt, response_type: int, additionals_dict: dict = None):
+
+        reply = self.CreateReplyPacket(orig_pkt)
+        reply = RaokServer.packet_apply_additionals(reply, additionals_dict)
+
+        reply.code = response_type
+        self.SendReplyPacket(orig_pkt.fd, reply)
+
+        raoklog.info("...")
+        return reply
+
+
+    def auth_reject(self, orig_pkt, additionals_dict: dict = None):
         raoklog.info("=> Authentication failed for user \'%s\'" % orig_pkt["User-Name"][0])
 
         reply = self.CreateReplyPacket(orig_pkt)
+        reply = RaokServer.packet_apply_additionals(reply, additionals_dict)
+
         reply.code = packet.AccessReject
         self.delay_packet(orig_pkt["User-Name"][0], "Reject")
         self.SendReplyPacket(orig_pkt.fd, reply)
@@ -306,23 +331,26 @@ class RaokServer(server.Server):
         raoklog.info("...")
         return reply
 
-    def find_user_password(self, user):
+    def find_user_auth_attr(self, user: str, section: str, attribute: str):
         try:
             # traverse all, we want to have a nice logging
             if user in self.cfg["users"]:
                 if "Auth" in self.cfg["users"][user]:
-                    if "Password" in self.cfg["users"][user]["Auth"]:
-                        return self.cfg["users"][user]["Auth"]["Password"]
+                    if attribute in self.cfg["users"][user][section]:
+                        return self.cfg["users"][user][section][attribute]
                     else:
-                        raoklog.debug("no password set for user")
+                        raoklog.debug("no '" + attribute + "' set for user")
                 else:
-                    raoklog.debug("'Auth' section not present for user")
+                    raoklog.debug("'" + section + "' section not present for user")
             else:
                 raoklog.debug("user not in database")
         except KeyError as e:
             raoklog.debug("error in reading user in db: " + str(e))
 
         return ""
+
+    def find_user_password(self, user: str) -> str:
+        return self.find_user_auth_attr(user, "Auth", "Password")
 
     def authenticate_plain(self, user, password, pkt=None):
 
@@ -549,6 +577,15 @@ class RaokServer(server.Server):
 
         elif "MS-CHAP-Response" in pkt and "MS-CHAP-Challenge" in pkt:
             if self.process_mschap(pkt):
+                if self.find_user_auth_attr(pkt["User-Name"][0], "Auth", "Password-Change"):
+                    additionals_dict = {
+                        "MS-CHAP-Error": "E=648 R=1 V=2",
+                        "Reply-Message": "E=648 R=1 V=2",
+                    }
+                    self.send_reply(pkt, packet.AccessReject, additionals_dict)
+                    raoklog.info(">>> password change request sent")
+                    return True
+
                 self.auth_accept(pkt)
                 return True
             else:
