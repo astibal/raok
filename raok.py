@@ -385,9 +385,14 @@ class RaokServer(server.Server):
     def find_user_password(self, user: str) -> str:
         pw = self.find_user_auth_attr(user, "Auth", "Password")
         if not pw and self.redis_instance:
-            resp = self.redis_instance.get(user)
+
+            resp = None
+            try:
+                resp = self.redis_instance.get(user)
+            except redis.exceptions.RedisError as redis_error:
+                raoklog.error("redis error: " + str(redis_error))
             if resp:
-                return resp.decode('ascii')
+                return resp.decode('utf8')
             return ""
 
     def authenticate_plain(self, user, password):
