@@ -12,6 +12,8 @@ import binascii
 import hashlib
 import struct
 
+import argparse
+
 from pyrad import dictionary, packet, server
 
 VERSION = "0.5.4"
@@ -793,6 +795,16 @@ def runRaok():
 
 if __name__ == "__main__":
     try:
+        parser = argparse.ArgumentParser(description=" raok server " + VERSION + " by Ales Stibal <astib@mag0.net>")
+        parser.add_argument('-S', '--serious',
+                            action='store_true',
+                            help="fail-close: specify to require existing user and password")
+
+        args = parser.parse_args(sys.argv[1:])
+
+        if args.serious:
+            Config.SERIOUS = True
+
         runRaok()
     except KeyboardInterrupt:
         raoklog.info("Ctrl-C hit. Terminating.")
