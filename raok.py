@@ -740,13 +740,13 @@ class RaokServer(server.Server):
                 return True
 
         elif "MS-CHAP2-Response" in pkt and "MS-CHAP-Challenge" in pkt:
-             ret = self.process_mschap2(pkt)
-             if ret:
-                 self.auth_accept(pkt, additionals_dict=ret)
-                 return True
-             else:
-                 self.auth_reject(pkt, additionals_dict=ret)
-                 return True
+            ret = self.process_mschap2(pkt)
+            if ret:
+                self.auth_accept(pkt, additionals_dict=ret)
+                return True
+            else:
+                self.auth_reject(pkt, additionals_dict=ret)
+                return True
 
         else:
             raoklog.error("unknown authentication method")
