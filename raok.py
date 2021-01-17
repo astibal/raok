@@ -110,7 +110,7 @@ def pyrad_str_value(pkt, attr):
         except IndexError:
             return ret
 
-        except UnicodeDecodeError as e:
+        except UnicodeDecodeError:
 
             t = pkt.dict.attributes[attr].type
             if t == 'string':
@@ -209,6 +209,7 @@ class RaokServer(server.Server):
         ret_reject = False
         ret_reason = "policy"
 
+        username = "default"
         try:
             username = orig_pkt["User-Name"][0]
             if username not in self.cfg['users']:
@@ -262,7 +263,7 @@ class RaokServer(server.Server):
                                 reply['Reply-Message'] = chal_setup_list[cur_idx + 1].encode("ascii")
                                 reply['State'] = chal_setup_list[cur_idx + 1].encode("ascii")
 
-                        except KeyError as e:
+                        except KeyError:
                             ret_challenge = False
                             raoklog.info("   unknown challenge state received")
                             ret_reject = True
@@ -350,7 +351,6 @@ class RaokServer(server.Server):
         raoklog.info("...")
         return reply
 
-
     def auth_reject(self, orig_pkt, additionals_dict: dict = None):
         raoklog.info("=> Authentication failed for user \'%s\'" % orig_pkt["User-Name"][0])
 
@@ -390,7 +390,7 @@ class RaokServer(server.Server):
                 return resp.decode('ascii')
             return ""
 
-    def authenticate_plain(self, user, password, pkt=None):
+    def authenticate_plain(self, user, password):
 
         correct_password = self.find_user_password(user)
         if not correct_password:
@@ -409,7 +409,7 @@ class RaokServer(server.Server):
 
         return Config.SERIOUS is False
 
-    def authenticate_chap(self, user, chap_ident, challenge, response, pkt=None):
+    def authenticate_chap(self, user, chap_ident, challenge, response):
 
         correct_password = self.find_user_password(user)
         if not correct_password:
@@ -442,7 +442,7 @@ class RaokServer(server.Server):
             # Successful decryption
             if retcode:
 
-                if self.authenticate_plain(username, clean_pwd, pkt):
+                if self.authenticate_plain(username, clean_pwd):
                     self.auth_accept(pkt)
                 else:
                     self.auth_reject(pkt)
@@ -454,13 +454,12 @@ class RaokServer(server.Server):
 
                 self.auth_reject(pkt)
 
-        except KeyError as e:
+        except KeyError:
             raoklog.warning("   some chap attributes missing, rejecting")
             self.auth_reject(pkt)
 
-        except UnicodeDecodeError as e:
+        except UnicodeDecodeError:
             raoklog.error("RADIUS: Password decoding failed")
-            raoklog.error("RADIUS: open mode: allowed in")
             self.auth_reject(pkt)
 
         return Config.SERIOUS is False
@@ -469,7 +468,7 @@ class RaokServer(server.Server):
 
         try:
             chap_challenge = pkt["CHAP-Challenge"][0]
-        except KeyError as e:
+        except KeyError:
             raoklog.warning("   CHAP-Challenge is missing, using packet authenticator.")
             if pkt.authenticator:
                 chap_challenge = pkt.authenticator
@@ -481,7 +480,7 @@ class RaokServer(server.Server):
         try:
             user = pkt["User-Name"][0]
             resp = pkt["CHAP-Password"][0]
-        except KeyError as e:
+        except KeyError:
             raoklog.warning("   some chap attributes missing, rejecting")
             attr_missing = True
             self.auth_reject(pkt)
@@ -494,7 +493,7 @@ class RaokServer(server.Server):
                       (resp_chap_ident, hexdump(bytes(chap_challenge)), hexdump(bytes(resp_octets))),
                       'HandleAuthPacket')
 
-        if self.authenticate_chap(user, resp_chap_ident, chap_challenge, resp_octets, pkt):
+        if self.authenticate_chap(user, resp_chap_ident, chap_challenge, resp_octets):
             self.auth_accept(pkt)
             return True
         else:
@@ -522,7 +521,7 @@ class RaokServer(server.Server):
                 self.auth_reject(pkt)
                 return True
 
-        except KeyError as e:
+        except KeyError:
 
             raoklog.warning("RADIUS: client violates RFC: both CHAP and PAP authentication request in packet.")
             self.auth_reject(pkt)
@@ -550,12 +549,10 @@ class RaokServer(server.Server):
     #     result = bytes([id_hex]) + bytes(password, encoding="ascii") + challenge
     #     response = hashlib.md5(result).digest()
 
-
     @staticmethod
     def lmhash_generate(id_hex, password, challenge):
         hash = hashlib.new('md4', "password".encode('utf-16le')).digest()
         binascii.hexlify(hash)
-
 
     def process_mschap2(self, pkt) -> dict:
 
@@ -563,7 +560,7 @@ class RaokServer(server.Server):
         try:
             triage = "MS-CHAP-Challenge"
             chap_challenge = pkt[triage][0]
-        except KeyError as e:
+        except KeyError:
             raoklog.warning("   MS-CHAP-Challenge is missing, using packet authenticator.")
             if pkt.authenticator:
                 chap_challenge = pkt.authenticator
@@ -574,7 +571,7 @@ class RaokServer(server.Server):
         try:
             user = pkt["User-Name"][0]
             resp = pkt["MS-CHAP2-Response"][0]
-        except KeyError as e:
+        except KeyError:
             raoklog.warning("   some chap attributes missing, rejecting")
             self.auth_reject(pkt)
             return {}
@@ -650,7 +647,7 @@ class RaokServer(server.Server):
 
         try:
             chap_challenge = pkt["MS-CHAP-Challenge"][0]
-        except KeyError as e:
+        except KeyError:
             raoklog.warning("   MS-CHAP-Challenge is missing, using packet authenticator.")
             if pkt.authenticator:
                 chap_challenge = pkt.authenticator
@@ -660,7 +657,7 @@ class RaokServer(server.Server):
         try:
             user = pkt["User-Name"][0]
             resp = pkt["MS-CHAP-Response"][0]
-        except KeyError as e:
+        except KeyError:
             raoklog.warning("   some chap attributes missing, rejecting")
             self.auth_reject(pkt)
             return True
@@ -705,7 +702,6 @@ class RaokServer(server.Server):
     def HandleAuthPacket(self, pkt):
 
         raoklog.info("=> Received an authentication request from %s" % pkt.source[0])
-        raoklog.info("   Attributes:")
 
         RaokServer.do_packet_dump(pkt)
 
@@ -770,9 +766,13 @@ class RaokServer(server.Server):
         return True
 
 
-def runRaok():
+def runRaok(bind_address="0.0.0.0"):
+
     raoklog.info("RAOK %s: testing RADIUS server" % (VERSION,))
-    raoklog.info("RAOK %s: !! DON'T USE IN PRODUCTION !!" % (VERSION,))
+    if not Config.SERIOUS:
+        raoklog.info("RAOK %s: !! DON'T USE IN PRODUCTION !!" % (VERSION,))
+    else:
+        raoklog.info("RAOK %s: running in strict mode" % (VERSION,))
     raoklog.info("...")
 
     # load dictionary
@@ -802,17 +802,13 @@ def runRaok():
     srv.init_hosts()
     srv.init_redis()
 
-    if len(sys.argv) > 1:
-        for l in sys.argv[1:]:
-            raoklog.info("Binding to: %s" % (l,))
-            srv.BindToAddress(l)
-    else:
-        srv.BindToAddress("0.0.0.0")
+    srv.BindToAddress(bind_address)
 
     srv.Run()
 
 
 if __name__ == "__main__":
+
     try:
         parser = argparse.ArgumentParser(description=" raok server " + VERSION + " by Ales Stibal <astib@mag0.net>")
         parser.add_argument('-S', '--serious',
