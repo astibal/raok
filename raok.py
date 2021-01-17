@@ -14,7 +14,19 @@ import struct
 
 from pyrad import dictionary, packet, server
 
-VERSION = "0.5.3"
+VERSION = "0.5.4"
+
+
+class Config:
+    SERIOUS = False
+    have_redis = False
+
+
+try:
+    import redis
+    Config.have_redis = True
+except ImportError:
+    pass
 
 __vis_filter = b"""................................ !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[.]^_`abcdefghijklmnopqrstuvwxyz{|}~................................................................................................................................."""
 
@@ -119,6 +131,7 @@ class RaokServer(server.Server):
     def __init__(self, dictionary_file):
         super().__init__(dict=dictionary_file)
         self.cfg = None
+        self.redis_instance = None
 
     def load_config(self, config_file):
 
@@ -140,7 +153,19 @@ class RaokServer(server.Server):
             raoklog.info("Initialize host %s with secret `%s'" % (h, s));
             self.hosts[h] = server.RemoteHost(h, bytes(s, encoding="ascii"), "localhost")
 
-            raoklog.info("   done.")
+            raoklog.debug("   done.")
+
+    def init_redis(self):
+        if not Config.have_redis:
+            raoklog.info("redis support not installed")
+            return False
+
+        try:
+            self.redis_instance = redis.Redis(host=self.cfg['settings']['redis']['host'],
+                                              port=int(self.cfg['settings']['redis']['port']), db=0)
+        except Exception as e:
+            Config.have_redis = False
+            raoklog.error("cannot create redis instance: " + str(e))
 
     @staticmethod
     def chap_generate(id_hex, password, challenge):
@@ -351,7 +376,12 @@ class RaokServer(server.Server):
         return ""
 
     def find_user_password(self, user: str) -> str:
-        return self.find_user_auth_attr(user, "Auth", "Password")
+        pw = self.find_user_auth_attr(user, "Auth", "Password")
+        if not pw and self.redis_instance:
+            resp = self.redis_instance.get(user)
+            if resp:
+                return resp.decode('ascii')
+            return ""
 
     def authenticate_plain(self, user, password, pkt=None):
 
@@ -749,6 +779,7 @@ def runRaok():
         srv.load_config(curcfg)
 
     srv.init_hosts()
+    srv.init_redis()
 
     if len(sys.argv) > 1:
         for l in sys.argv[1:]:
