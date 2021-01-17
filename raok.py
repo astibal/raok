@@ -178,19 +178,19 @@ class RaokServer(server.Server):
         ret_reason = "policy"
 
         try:
-            u = orig_pkt["User-Name"][0]
-            if u not in self.cfg['users']:
+            username = orig_pkt["User-Name"][0]
+            if username not in self.cfg['users']:
                 if 'default' not in self.cfg['users']:
-                    u = None
+                    username = None
                 else:
-                    u = 'default'
+                    username = 'default'
 
-            if u:
+            if username:
 
-                if 'Challenge' in self.cfg['users'][u]:
+                if 'Challenge' in self.cfg['users'][username]:
                     ret_challenge = True
 
-                    chal_setup_list = self.cfg['users'][u]['Challenge']
+                    chal_setup_list = self.cfg['users'][username]['Challenge']
                     raoklog.debug("   Loading challenge settings: %s" % chal_setup_list)
 
                     # load challenge setup, so we know which state are we in
@@ -236,10 +236,10 @@ class RaokServer(server.Server):
                             ret_reject = True
                             ret_reason = "challenge state error"
 
-                if 'Auth' in self.cfg['users'][u] and not ret_challenge and not ret_reject:
-                    raoklog.info("   Loading attributes for '%s' " % (u,))
-                    for a in self.cfg['users'][u]['Auth']:
-                        v = self.cfg['users'][u]['Auth'][a]
+                if 'Auth' in self.cfg['users'][username] and not ret_challenge and not ret_reject:
+                    raoklog.info("   Loading attributes for '%s' " % (username,))
+                    for a in self.cfg['users'][username]['Auth']:
+                        v = self.cfg['users'][username]['Auth'][a]
                         raoklog.info("      %s = \'%s\' " % (a, v))
 
                         if isinstance(v, list):
@@ -253,8 +253,8 @@ class RaokServer(server.Server):
                             if str(a) in reply:
                                 reply[str(a)] = str(v)
 
-                if 'Access' in self.cfg['users'][u]:
-                    if not self.cfg['users'][u]['Access']:
+                if 'Access' in self.cfg['users'][username]:
+                    if not self.cfg['users'][username]['Access']:
                         ret_reject = True
 
         except KeyError as e:
@@ -271,7 +271,7 @@ class RaokServer(server.Server):
             r_str = "Challenge (%s)" % (ret_reason,)
 
         ###
-        self.delay_packet(u, r_str)
+        self.delay_packet(username, r_str)
 
         reply = RaokServer.packet_apply_additionals(reply, additionals_dict)
         self.SendReplyPacket(orig_pkt.fd, reply)
