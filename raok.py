@@ -450,9 +450,8 @@ class RaokServer(server.Server):
             # Decryption failed!
             else:
                 raoklog.error("RADIUS: Password decryption failed (dumping packet): ")
-                raoklog.info("RADIUS: Attributes: ")
-                for attr in pkt.keys():
-                    raoklog.info("RADIUS: %s: %s" % (attr, pyrad_str_value(pkt, attr)))
+                RaokServer.do_packet_dump(pkt)
+
                 self.auth_reject(pkt)
 
         except KeyError as e:
@@ -756,9 +755,8 @@ class RaokServer(server.Server):
         server.Server._HandleAcctPacket(self, pkt)
 
         raoklog.info("=> Received an accounting request from %s" % pkt.source[0])
-        raoklog.info("   Attributes: ")
-        for attr in pkt.keys():
-            raoklog.info("       %s = %s" % (attr, pyrad_str_value(pkt, attr)))
+
+        RaokServer.do_packet_dump(pkt)
 
         try:
             reply = self.CreateReplyPacket(pkt)
