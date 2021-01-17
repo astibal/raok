@@ -46,7 +46,8 @@ def hexdump(buf, length=16):
     return '\n'.join(res)
 
 
-class raoklog:
+class RaokLog:
+    level = logging.INFO
     logger = None
     separator = ": "
 
@@ -62,7 +63,7 @@ class raoklog:
             hdlr.setFormatter(formatter)
             self.logger.handlers = []
             self.logger.addHandler(hdlr)
-            self.logger.setLevel(logging.INFO)
+            self.logger.setLevel(RaokLog.level)
             return True
         except Exception as e:
             print("LOGGER INIT FAILURE: " + str(e))
@@ -87,8 +88,7 @@ class raoklog:
         self.logger.debug(pfx + self.separator + "\n" + hexdump(msg))
 
 
-raoklog = raoklog()
-
+raoklog = None
 
 # this function is pure workaround for unicode decoding issue in pyrad.
 # since there is no convenience method in pyrad to "just damn get the string of bytes" from STRING radius attribute,
@@ -535,7 +535,7 @@ class RaokServer(server.Server):
 
     @staticmethod
     def do_packet_dump(pkt):
-        if Config.SERIOUS:
+        if Config.SERIOUS and RaokLog.level > logging.INFO:
             return
 
         raoklog.info("   Attributes:")
@@ -819,12 +819,19 @@ if __name__ == "__main__":
         parser.add_argument('-S', '--serious',
                             action='store_true',
                             help="fail-close: specify to require existing user and password")
+        parser.add_argument('-v', '--verbose',
+                            action='store_true',
+                            help="print out debugging information")
 
         args = parser.parse_args(sys.argv[1:])
 
         if args.serious:
             Config.SERIOUS = True
 
+        if args.verbose:
+            RaokLog.level = logging.DEBUG
+
+        raoklog = RaokLog()
         runRaok()
     except KeyboardInterrupt:
         raoklog.info("Ctrl-C hit. Terminating.")

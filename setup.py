@@ -8,7 +8,7 @@ with open(path.join(this_directory, 'README.rst')) as fh:
 
 setuptools.setup(
     name='raok',
-    version='0.5.3post1',
+    version='0.5.4post1',
     scripts=[ 'raok-init.sh', 'raok.py', 'rasta.py'],
     author="Ales Stibal",
     author_email="astib@mag0.net",
