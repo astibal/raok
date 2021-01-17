@@ -216,8 +216,9 @@ class RaokServer(server.Server):
                         # debug output for challenge index table
                         raoklog.debug("   challenge table:")
                         raoklog.debug("   " + str(chal_setup_list))
+
                         for deb_chsi in chal_setup.keys():
-                            raoklog.debug("   [%s] %s" % (deb_chsi, chal_setup[chsi]))
+                            raoklog.debug("   [%s] %s" % (deb_chsi, chal_setup[deb_chsi]))
 
                         try:
                             cur_idx = chal_setup[state]
