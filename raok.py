@@ -152,7 +152,12 @@ class RaokServer(server.Server):
     def init_hosts(self):
         for h in self.cfg['settings']['hosts'].keys():
             s = self.cfg['settings']['hosts'][h]['secret']
-            raoklog.info("Initialize host %s with secret `%s'" % (h, s));
+
+            if not Config.SERIOUS:
+                raoklog.info("Initialize host %s with secret `%s'" % (h, s))
+            else:
+                raoklog.info("Initialize host %s" % (h,))
+
             self.hosts[h] = server.RemoteHost(h, bytes(s, encoding="ascii"), "localhost")
 
             raoklog.debug("   done.")
@@ -389,24 +394,29 @@ class RaokServer(server.Server):
 
         correct_password = self.find_user_password(user)
         if not correct_password:
-            raoklog.info(">>>  user " + user + " PAP password check skipped")
-            return True
+
+            if not Config.SERIOUS:
+                raoklog.info(">>>  user " + user + " PAP password check skipped")
+            return Config.SERIOUS is False
 
         if correct_password == password:
             raoklog.info(">>>  user '" + user + "' PAP password check OK")
+            return True
         else:
             raoklog.info(">>>  user '" + user + "' PAP password check failed")
             if correct_password:
                 return False
 
-        return True
+        return Config.SERIOUS is False
 
     def authenticate_chap(self, user, chap_ident, challenge, response, pkt=None):
 
         correct_password = self.find_user_password(user)
         if not correct_password:
-            raoklog.info(">>>  user " + user + " CHAP password check skipped")
-            return True
+            if not Config.SERIOUS:
+                raoklog.info(">>>  user " + user + " CHAP password check skipped")
+
+            return Config.SERIOUS is False
 
         correct_response = RaokServer.chap_generate(chap_ident, correct_password, challenge)
 
@@ -415,13 +425,13 @@ class RaokServer(server.Server):
 
         if correct_response == response:
             raoklog.info(">>>  user '" + user + "' CHAP password check OK")
+            return True
         else:
             raoklog.info(">>>  user '" + user + "' CHAP password check failed")
             if correct_password:
                 return False
 
-
-        return True
+        return Config.SERIOUS is False
 
     def process_pap(self, pkt):
         try:
@@ -454,7 +464,7 @@ class RaokServer(server.Server):
             raoklog.error("RADIUS: open mode: allowed in")
             self.auth_reject(pkt)
 
-        return True
+        return Config.SERIOUS is False
 
     def process_chap(self, pkt):
 
@@ -522,6 +532,10 @@ class RaokServer(server.Server):
 
     @staticmethod
     def do_packet_dump(pkt):
+        if Config.SERIOUS:
+            return
+
+        raoklog.info("   Attributes:")
         for at in pkt.keys():
             if at == "User-Password":
                 dec_status, pwd = RaokServer.pap_decrypt(pkt)
@@ -621,6 +635,10 @@ class RaokServer(server.Server):
 
                 return ret
         else:
+
+            if Config.SERIOUS:
+                return {}
+
             raoklog.info(">>>  user " + user + " MS-CHAP2 password check skipped")
 
             # return True :)
@@ -679,8 +697,11 @@ class RaokServer(server.Server):
                 raoklog.info(">>>  user '" + user + "' MS-CHAP NT password check failed")
                 return False
 
-        raoklog.info(">>>  user '" + user + "' MS-CHAP password check skipped")
-        return True
+        if Config.SERIOUS is False:
+            raoklog.info(">>>  user '" + user + "' MS-CHAP password check skipped")
+            return True
+        else:
+            return False
 
     def HandleAuthPacket(self, pkt):
 
