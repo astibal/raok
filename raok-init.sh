@@ -2,9 +2,34 @@
 
 if [ ! -d "etc" ]; then
   mkdir etc/
-  cd etc/
+  cd etc/ || exit
 
 cat > raok.cfg <<'endmsg'
+{
+    "settings" : {
+        "hosts": {
+            "127.0.0.1": {
+            "secret": "radpass"
+            },
+            "127.0.0.2": {
+            "secret": "radpass"
+            }
+        },
+        "acct": {
+            "host": "127.0.0.1",
+            "secret": "radpass"
+        },
+        "redis": {
+            "host": "127.0.0.1",
+            "port": 6379
+        }
+    },
+    "users" : {
+    }
+}
+endmsg
+
+cat > raok-demo.cfg <<'endmsg'
 {
     "settings" : {
         "hosts": {
@@ -24,6 +49,10 @@ cat > raok.cfg <<'endmsg'
         "acct": {
             "host": "127.0.0.1",
             "secret": "radpass"
+        },
+        "redis": {
+            "host": "127.0.0.1",
+            "port": 6379
         }
     },
     "users" : {
@@ -63,8 +92,8 @@ cat > raok.cfg <<'endmsg'
             }
         },
         "nologin": {
-	     "Access": false
-	},
+	          "Access": false
+	      },
         "smithproxy": {
             "Auth": {
                 "Smithproxy-Policy": "DropIt"
